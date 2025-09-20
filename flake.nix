@@ -2,65 +2,89 @@
   description = "Ghost application flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
-    flake-utils.url = "github:numtide/flake-utils";
-    naersk = {
-      url = "github:nmattia/naersk";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs, flake-utils, naersk, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        overlays = [ (import rust-overlay) ];
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = overlays;
+  outputs = { self, nixpkgs }:
+    let
+      lib = nixpkgs.lib;
+      systems = [
+        "aarch64-darwin"
+        "x86_64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+      forEachSystem = f: lib.genAttrs systems f;
+      cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
+      packageName = cargoToml.package.name;
+      packageVersion = cargoToml.package.version or "git";
+      rustToolchain = builtins.fromTOML (builtins.readFile ./rust-toolchain.toml);
+      rustChannel = rustToolchain.toolchain.channel or "stable";
+      sanitizeVersion = version: builtins.replaceStrings [ "." ] [ "_" ] version;
+      selectRustPackages = pkgs:
+        let
+          candidate = "rustPackages_" + sanitizeVersion rustChannel;
+        in
+        if builtins.hasAttr candidate pkgs then builtins.getAttr candidate pkgs else pkgs.rustPackages;
+      mkRustPlatform = pkgs:
+        let rustPkgs = selectRustPackages pkgs;
+        in pkgs.makeRustPlatform {
+          cargo = rustPkgs.cargo;
+          rustc = rustPkgs.rustc;
         };
-        cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
-        packageName = cargoToml.package.name;
-        toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-        naersk-lib = pkgs.callPackage naersk {
-          cargo = toolchain;
-          rustc = toolchain;
-          clippy = toolchain;
-        };
-        darwinFrameworks = pkgs.lib.optionals pkgs.stdenv.isDarwin (
-          with pkgs.darwin.apple_sdk.frameworks;
-            [ CoreServices CoreFoundation ]
-        );
-        commonNativeInputs = [ pkgs.pkg-config ];
-        ghost = naersk-lib.buildPackage {
-          pname = "ghost";
-          version = "git";
-          src = ./.;
-          nativeBuildInputs = commonNativeInputs;
-          buildInputs = darwinFrameworks;
-          meta = with pkgs.lib; {
-            description = "Simple background process manager with a TUI for Unix-like systems.";
-            homepage = "https://github.com/skanehira/ghost";
-            license = licenses.mit;
-            mainProgram = packageName;
-            platforms = platforms.unix;
+      darwinFrameworksFor = pkgs:
+        pkgs.lib.optionals pkgs.stdenv.isDarwin [];
+    in
+    rec {
+      packages = forEachSystem (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          rustPlatform = mkRustPlatform pkgs;
+        in
+        {
+          default = rustPlatform.buildRustPackage {
+            pname = packageName;
+            version = packageVersion;
+            src = ./.;
+            cargoLock.lockFile = ./Cargo.lock;
+            doCheck = false;
+            nativeBuildInputs = [ pkgs.pkg-config pkgs.lsof ];
+            buildInputs = darwinFrameworksFor pkgs;
+            meta = with pkgs.lib; {
+              description = "Simple background process manager with a TUI for Unix-like systems.";
+              homepage = "https://github.com/skanehira/ghost";
+              license = licenses.mit;
+              mainProgram = packageName;
+              platforms = platforms.unix;
+            };
           };
-        };
-      in {
-        packages.default = ghost;
+        }
+      );
 
-        apps.default = {
+      apps = forEachSystem (system: {
+        default = {
           type = "app";
-          program = "${ghost}/bin/ghost";
-        };
-
-        devShells.default = pkgs.mkShell {
-          nativeBuildInputs = [ toolchain ] ++ commonNativeInputs;
-          buildInputs = darwinFrameworks;
-          RUST_BACKTRACE = "1";
+          program = "${packages.${system}.default}/bin/${packageName}";
         };
       });
+
+      devShells = forEachSystem (system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          rustPkgs = selectRustPackages pkgs;
+        in
+        {
+          default = pkgs.mkShell {
+            packages = [
+              rustPkgs.rustc
+              rustPkgs.cargo
+              pkgs.pkg-config
+              pkgs.lsof
+            ];
+            buildInputs = darwinFrameworksFor pkgs;
+            RUST_BACKTRACE = "1";
+            RUSTUP_TOOLCHAIN = rustChannel;
+          };
+        });
+    };
 }
