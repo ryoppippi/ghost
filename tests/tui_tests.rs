@@ -10,7 +10,9 @@ use tempfile::TempDir;
 /// Helper function to load expected output from file
 fn load_expected(filename: &str) -> String {
     let path = format!("tests/expected/{filename}");
-    fs::read_to_string(&path).unwrap_or_else(|_| panic!("Failed to read expected file: {path}"))
+    fs::read_to_string(&path)
+        .unwrap_or_else(|_| panic!("Failed to read expected file: {path}"))
+        .replace("{VERSION}", env!("CARGO_PKG_VERSION"))
 }
 
 /// Helper struct to manage test environment with temporary data directory
