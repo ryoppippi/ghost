@@ -54,8 +54,11 @@ git diff <前回タグ>..HEAD
 
 1. Cargo.tomlの`version`フィールドを更新
 2. `cargo check`で検証
-3. 変更をコミット: `chore: bump version to X.Y.Z`
-4. git tagを作成: `vX.Y.Z`
+3. `cargo test`で全テスト通過を確認（**必須**: バージョン文字列がテストの期待値に含まれている場合の不整合をここで検出する）
+4. 変更をコミット: `chore: bump version to X.Y.Z`
+5. git tagを作成: `vX.Y.Z`
+
+テストが失敗した場合は、コミットせずにユーザーに報告して原因を特定する。バージョン文字列由来の失敗であれば、テスト側を動的化（例: `env!("CARGO_PKG_VERSION")`）するか期待値ファイルを更新する。
 
 ### 5. 完了報告
 
