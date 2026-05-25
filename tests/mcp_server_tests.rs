@@ -381,3 +381,35 @@ async fn ghost_run_and_stop_lifecycle() {
     let updated_task: Task = serde_json::from_str(&status_payload).expect("valid status task JSON");
     assert_eq!(updated_task.status, TaskStatus::Killed);
 }
+
+#[tokio::test]
+async fn list_tools_returns_all_ghost_tools_with_descriptions() {
+    let ctx = McpTestContext::new();
+    let conn = ctx.connection();
+    let handler = GhostServerHandler::new(conn);
+
+    let result = handler
+        .handle_list_tools_request(None, Arc::new(DummyRuntime::default()))
+        .await
+        .expect("list tools should succeed");
+
+    let listed: Vec<(&str, Option<&str>)> = result
+        .tools
+        .iter()
+        .map(|tool| (tool.name.as_str(), tool.description.as_deref()))
+        .collect();
+
+    assert_eq!(
+        listed,
+        vec![
+            (
+                "ghost_run",
+                Some("Run one or more commands as background processes managed by ghost")
+            ),
+            ("ghost_list", Some("List all processes managed by ghost")),
+            ("ghost_stop", Some("Stop a running process by ID")),
+            ("ghost_log", Some("Get logs for a specific process")),
+            ("ghost_status", Some("Check status of a specific process")),
+        ]
+    );
+}
