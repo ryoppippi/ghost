@@ -11,8 +11,8 @@ use rust_mcp_sdk::auth::AuthInfo;
 use rust_mcp_sdk::mcp_server::ServerHandler;
 use rust_mcp_sdk::schema::schema_utils::{ClientMessage, MessageFromServer, ServerMessage};
 use rust_mcp_sdk::schema::{
-    CallToolRequest, CallToolRequestParams, CallToolResult, ContentBlock, Implementation,
-    InitializeRequestParams, InitializeResult, LATEST_PROTOCOL_VERSION, ServerCapabilities,
+    CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeRequestParams,
+    InitializeResult, LATEST_PROTOCOL_VERSION, ServerCapabilities,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -82,6 +82,9 @@ impl Default for DummyRuntime {
                     name: "ghost-test".into(),
                     title: Some("Ghost Test Runtime".into()),
                     version: "0.0.0".into(),
+                    description: None,
+                    icons: vec![],
+                    website_url: None,
                 },
                 capabilities: ServerCapabilities::default(),
                 instructions: None,
@@ -109,6 +112,14 @@ impl McpServer for DummyRuntime {
 
     fn server_info(&self) -> &InitializeResult {
         &self.server_info
+    }
+
+    fn task_store(&self) -> Option<Arc<rust_mcp_sdk::task_store::ServerTaskStore>> {
+        None
+    }
+
+    fn client_task_store(&self) -> Option<Arc<rust_mcp_sdk::task_store::ClientTaskStore>> {
+        None
     }
 
     fn client_info(&self) -> Option<InitializeRequestParams> {
@@ -151,17 +162,19 @@ impl McpServer for DummyRuntime {
     }
 }
 
-fn make_call_request(name: &str, args: Value) -> CallToolRequest {
+fn make_call_request(name: &str, args: Value) -> CallToolRequestParams {
     let arguments = match args {
         Value::Object(map) => map,
         Value::Null => serde_json::Map::new(),
         other => panic!("tool arguments must be an object, got {other:?}"),
     };
 
-    CallToolRequest::new(CallToolRequestParams {
+    CallToolRequestParams {
         name: name.to_string(),
         arguments: Some(arguments),
-    })
+        meta: None,
+        task: None,
+    }
 }
 
 fn insert_task_with_log(ctx: &McpTestContext, conn: &Connection, id: &str, log_contents: &str) {

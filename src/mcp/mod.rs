@@ -1,10 +1,13 @@
 use async_trait::async_trait;
 use rust_mcp_sdk::macros::{JsonSchema, mcp_tool};
-use rust_mcp_sdk::mcp_server::{ServerHandler, server_runtime};
+use rust_mcp_sdk::mcp_server::{
+    McpServerOptions, ServerHandler, ToMcpServerHandler, server_runtime,
+};
 use rust_mcp_sdk::schema::schema_utils::CallToolError;
 use rust_mcp_sdk::schema::{
-    CallToolRequest, CallToolResult, Implementation, InitializeResult, LATEST_PROTOCOL_VERSION,
-    ListToolsRequest, ListToolsResult, ServerCapabilities, ServerCapabilitiesTools, TextContent,
+    CallToolRequestParams, CallToolResult, Implementation, InitializeResult,
+    LATEST_PROTOCOL_VERSION, ListToolsResult, PaginatedRequestParams, ServerCapabilities,
+    ServerCapabilitiesTools, TextContent,
 };
 use rust_mcp_sdk::{McpServer, tool_box};
 use rust_mcp_transport::{StdioTransport, TransportOptions};
@@ -89,7 +92,7 @@ impl GhostServerHandler {
 impl ServerHandler for GhostServerHandler {
     async fn handle_list_tools_request(
         &self,
-        _request: ListToolsRequest,
+        _request: Option<PaginatedRequestParams>,
         _runtime: Arc<dyn McpServer>,
     ) -> Result<ListToolsResult, rust_mcp_sdk::schema::RpcError> {
         Ok(ListToolsResult {
@@ -101,11 +104,10 @@ impl ServerHandler for GhostServerHandler {
 
     async fn handle_call_tool_request(
         &self,
-        request: CallToolRequest,
+        request: CallToolRequestParams,
         _runtime: Arc<dyn McpServer>,
     ) -> Result<CallToolResult, CallToolError> {
-        let params = request.params.clone();
-        let tool = GhostTools::try_from(params)?;
+        let tool = GhostTools::try_from(request)?;
 
         match tool {
             GhostTools::RunTool(t) => {
@@ -221,6 +223,9 @@ pub async fn run_stdio_server(conn: Connection) -> Result<(), Box<dyn std::error
             name: "ghost-mcp".into(),
             title: Some("Ghost MCP Server".into()),
             version: env!("CARGO_PKG_VERSION").into(),
+            description: None,
+            icons: vec![],
+            website_url: None,
         },
         capabilities: ServerCapabilities {
             tools: Some(ServerCapabilitiesTools { list_changed: None }),
@@ -242,7 +247,14 @@ pub async fn run_stdio_server(conn: Connection) -> Result<(), Box<dyn std::error
     };
 
     let handler = GhostServerHandler::new(conn);
-    let server = server_runtime::create_server(server_details, transport, handler);
+    let server = server_runtime::create_server(McpServerOptions {
+        server_details,
+        transport,
+        handler: handler.to_mcp_server_handler(),
+        task_store: None,
+        client_task_store: None,
+        message_observer: None,
+    });
 
     info!("Ghost MCP server initialized, waiting for connections...");
 
